@@ -1,0 +1,34 @@
+# Environment variables and secrets
+.env
+.env.local
+*.env
+
+# Dependencies
+node_modules/
+
+# Sensitive data files
+backend/data/*.xlsx
+backend/data/*.xls
+backend/data/*.csv
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+backend/qrcodes/
+backend/barcodes/
+
+# Expo / React Native
+frontend-scanner/node_modules/
+frontend-scanner/.expo/
+frontend-scanner/*.log
+
+# Expo build output. Regenerated on every `eas update`, several megabytes per
+# bundle, and read by nobody — the source that produced it is what matters.
+dist/
+.expo/

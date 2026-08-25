@@ -1,0 +1,143 @@
+/* ---------------------------------------------------------------------------
+   AssetHub — foundations
+
+   This replaces the Vite starter stylesheet, which was still in place: purple
+   accent, a fixed 1126px #root, centre-aligned text, and a
+   prefers-color-scheme:dark block that flipped the whole panel dark. Combined
+   with color-scheme:light dark, form controls followed the OS theme and
+   rendered white text on the white backgrounds the components set — which is
+   why inputs looked empty.
+
+   The register is a daytime, desk-bound, data-dense tool. It is light by
+   design, and says so, rather than inheriting whatever the OS prefers.
+--------------------------------------------------------------------------- */
+
+:root {
+  /* Ink is cooler than pure black so it sits calmly beside the brand teal. */
+  --ink:        #14181f;
+  --ink-soft:   #5a6472;
+  --ink-faint:  #98a1ae;
+
+  --paper:      #ffffff;
+  --surface:    #f6f7f9;
+  --surface-2:  #eef0f4;
+  --rule:       #e2e6ec;
+
+  /* The brand tokens were named --orange because the product was one
+     organisation's and that organisation's accent was orange. They are named
+     for their role now, because the value is going to change again: once
+     organisation.primary_colour exists, a tenant sets its own. */
+  --brand:      #0d7c74;
+  --brand-ink:  #0a5f59;
+  --brand-bg:   #e7f2f1;
+  --deep:       #0a3d4a;
+  --deep-bg:    #e6eef0;
+
+  --good:       #16794c;
+  --good-bg:    #e8f4ee;
+  --warn:       #b26a00;
+  --warn-bg:    #fdf3e3;
+  --bad:        #c0392b;
+  --bad-bg:     #fdecea;
+
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Asset codes are typed, printed and scanned — they're set in mono
+     wherever they appear, here and in the scanner. */
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --r-sm: 6px;
+  --r:    10px;
+  --r-lg: 14px;
+
+  --shadow-sm: 0 1px 2px rgba(20, 24, 31, 0.05);
+  --shadow:    0 1px 3px rgba(20, 24, 31, 0.08), 0 1px 2px rgba(20, 24, 31, 0.04);
+  --shadow-lg: 0 10px 24px rgba(20, 24, 31, 0.10), 0 2px 6px rgba(20, 24, 31, 0.05);
+
+  /* Declared, not inherited. The panel has one light design. */
+  color-scheme: light;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+#root { min-height: 100svh; }
+
+h1, h2, h3, h4 {
+  margin: 0;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1rem; }
+p  { margin: 0; }
+
+a { color: var(--deep); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* --- Form controls -------------------------------------------------------
+   Every property that the browser would otherwise theme is set explicitly.
+   The previous stylesheet let the OS decide, which is how typed characters
+   ended up invisible.
+------------------------------------------------------------------------- */
+input, select, textarea, button {
+  font-family: inherit;
+  font-size: 0.9375rem;
+}
+
+input[type='text'],
+input[type='search'],
+input[type='number'],
+input[type='date'],
+input[type='email'],
+input[type='password'],
+select,
+textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--paper);
+  color: var(--ink);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input::placeholder, textarea::placeholder { color: var(--ink-faint); }
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-bg);
+}
+
+select {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a6472' stroke-width='2.5' stroke-linecap='round'%3e%3cpath d='M6 9l6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 1rem;
+  cursor: pointer;
+}
+
+button { cursor: pointer; border: none; background: none; color: inherit; }
+button:disabled { opacity: 0.55; cursor: default; }
+
+::selection { background: var(--brand-bg); color: var(--brand-ink); }
+
+/* Visible focus for keyboard users, invisible for mouse users. */
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

@@ -1,0 +1,20 @@
+# Normalise line endings so the whole tree stops showing as modified.
+#
+# The repo has LF in its committed blobs while the working tree is CRLF, and
+# with core.autocrlf unset git reported every source file as changed. That hid
+# real edits and made diffs unreadable.
+#
+# After adding this file, run once to re-normalise the index:
+#   git add --renormalize .
+#   git commit -m "Normalise line endings"
+* text=auto eol=lf
+
+# Binary assets git shouldn't touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.xls binary

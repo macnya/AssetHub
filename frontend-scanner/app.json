@@ -1,0 +1,72 @@
+{
+  "expo": {
+    "name": "AssetHub Scanner",
+    "slug": "assethub-scanner",
+    "version": "1.0.2",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "package": "com.assethub.scanner",
+      "versionCode": 4,
+      "userInterfaceStyle": "light",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.assethub.scanner",
+      "buildNumber": "1",
+      "supportsTablet": false,
+      "userInterfaceStyle": "light",
+      "infoPlist": {
+        "NSCameraUsageDescription": "AssetHub Scanner uses the camera to read asset barcodes.",
+        "NSLocationWhenInUseUsageDescription": "AssetHub Scanner records where an asset was scanned or verified."
+      }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow AssetHub Scanner to use the camera to read asset barcodes."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow AssetHub Scanner to use your location to log where assets are scanned."
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE-VIA-EAS-INIT"
+      }
+    },
+    "owner": "mac_maera",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6754b836-bc23-4bf6-932f-d4b05b5e6102"
+    }
+  }
+}

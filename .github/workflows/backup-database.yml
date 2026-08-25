@@ -1,0 +1,125 @@
+# Nightly logical backup of the asset register.
+#
+# WHY THIS EXISTS
+# The entire fixed asset register — ~2,300 assets, their assignment history and
+# every verification an officer has recorded — lives in a single Supabase
+# instance. Free-tier retention is short and point-in-time recovery is a paid
+# feature, so without this there is no way back from a bad migration, a
+# mistaken DELETE, or an account problem.
+#
+# CONNECTION STRING — READ THIS
+# BACKUP_DATABASE_URL must use the SESSION pooler on port 5432, not the
+# transaction pooler on 6543 that the app uses. pg_dump needs session state
+# (it sets search_path, takes a consistent snapshot) which transaction-mode
+# pooling does not preserve; against 6543 it fails or produces a partial dump.
+#
+# In Supabase: the Connect button in the top bar -> Session pooler.
+#
+# SETUP
+#   1. Repo -> Settings -> Secrets and variables -> Actions -> New secret
+#   2. Name: BACKUP_DATABASE_URL, value: the session-pooler URI
+#   3. Run it once by hand (Actions tab -> this workflow -> Run workflow)
+#   4. Download the artifact and RESTORE IT somewhere. An untested backup is
+#      not a backup — see RESTORE.md.
+
+name: Backup database
+
+on:
+  schedule:
+    # 02:00 UTC = 05:00 EAT, after the working day and before the next one.
+    - cron: '0 2 * * *'
+  workflow_dispatch:        # lets you trigger it by hand from the Actions tab
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Install a PostgreSQL client matching the server
+        # The runner preinstalls client 16, but Supabase is on 17 and pg_dump
+        # refuses to dump from a newer server. Installing the newer client is
+        # not enough on its own: apt puts it in /usr/lib/postgresql/17/bin,
+        # which is NOT on PATH, so `pg_dump` silently kept meaning 16.
+        run: |
+          set -euo pipefail
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Confirm the client is actually version 17
+        # Assert rather than print. A green install step told us nothing last
+        # time — the failure only surfaced two steps later.
+        run: |
+          set -euo pipefail
+          echo "pg_dump resolves to: $(which pg_dump)"
+          pg_dump --version
+          pg_dump --version | grep -q " 17\." || {
+            echo "PATH is still pointing at an older pg_dump."
+            exit 1
+          }
+
+      - name: Verify the secret is set
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "$BACKUP_DATABASE_URL" ]; then
+            echo "BACKUP_DATABASE_URL is not set. See the comment at the top of this file."
+            exit 1
+          fi
+          case "$BACKUP_DATABASE_URL" in
+            *:6543*)
+              echo "That is the TRANSACTION pooler (6543). pg_dump needs the SESSION pooler (5432)."
+              exit 1 ;;
+          esac
+          echo "Secret present and not pointing at the transaction pooler."
+
+      - name: Dump
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          STAMP=$(date -u +'%Y-%m-%d')
+          mkdir -p out
+
+          # Custom format (-Fc): compressed, and pg_restore can pull out a
+          # single table from it. Plain SQL cannot do that.
+          pg_dump "$BACKUP_DATABASE_URL" \
+            --format=custom \
+            --schema=public \
+            --no-owner --no-privileges \
+            --file="out/assethub-${STAMP}.dump"
+
+          # Plain SQL alongside it, so the contents can be read and grepped
+          # without any Postgres tooling to hand.
+          pg_dump "$BACKUP_DATABASE_URL" \
+            --format=plain \
+            --schema=public \
+            --no-owner --no-privileges \
+            | gzip > "out/assethub-${STAMP}.sql.gz"
+
+          ls -lh out/
+
+      - name: Sanity-check the dump
+        # A backup that restores to an empty database is worse than none,
+        # because it looks like protection. Fail loudly instead.
+        run: |
+          SIZE=$(stat -c%s out/*.dump)
+          echo "Dump size: $SIZE bytes"
+          if [ "$SIZE" -lt 51200 ]; then
+            echo "Dump is under 50KB — almost certainly empty or truncated."
+            exit 1
+          fi
+          gunzip -c out/*.sql.gz | grep -c "CREATE TABLE" | \
+            xargs -I{} sh -c 'echo "Tables in dump: {}"; [ {} -ge 8 ] || { echo "Too few tables — expected at least 8."; exit 1; }'
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: assethub-backup-${{ github.run_number }}
+          path: out/
+          retention-days: 90
+          if-no-files-found: error

@@ -1,0 +1,27 @@
+{
+  "name": "assethub-scanner",
+  "version": "1.0.0",
+  "description": "AssetHub field scanner",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.1.0",
+    "@react-native-community/netinfo": "11.4.1",
+    "@react-native-picker/picker": "2.11.1",
+    "axios": "^1.7.0",
+    "expo": "^54.0.0",
+    "expo-camera": "~17.0.10",
+    "expo-location": "~19.0.8",
+    "expo-sqlite": "~16.0.10",
+    "expo-updates": "~29.0.19",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  }
+}
