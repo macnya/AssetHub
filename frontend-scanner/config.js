@@ -5,4 +5,4 @@
 //   EXPO_PUBLIC_API_URL=http://192.168.1.42:5000
 // Use the machine's LAN IP, not localhost — the phone can't reach that.
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'https://ASSETHUB-API-URL.onrender.com';
+  process.env.EXPO_PUBLIC_API_URL || 'https://assethub-api-d8by.onrender.com';
