@@ -16,7 +16,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(cors({
   origin: [
-    'https://ASSETHUB-ADMIN-URL.onrender.com',
+    'https://assethub-panel.onrender.com',
     'http://localhost:5173',
   ],
 }));
