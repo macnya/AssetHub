@@ -57,11 +57,21 @@ async function verifyToken(req, res, next) {
 
   const token = authHeader.split(' ')[1];
 
-  let decoded;
+   let decoded;
   try {
     decoded = jwt.verify(token, process.env.JWT_SECRET);
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  // A platform token carries more authority than any tenant account and must
+  // not be usable as one. Both tokens are signed with the same secret, so
+  // without this check an operator token would satisfy verifyToken and act as
+  // whichever staff id it happened to carry. platformAuth.js makes the
+  // opposite check; both directions have to hold or the separation is only on
+  // paper.
+  if (decoded.aud === 'assethub-platform') {
+    return res.status(403).json({ error: 'Not a staff token' });
   }
 
   // Tokens issued before organisations existed carry no org_id. There is no
@@ -69,7 +79,6 @@ async function verifyToken(req, res, next) {
   if (!decoded.org_id) {
     return res.status(401).json({ error: 'Please sign in again.' });
   }
-
   // Everything from here runs inside one organisation's context, on one
   // connection, including the account lookup below and every query the route
   // will make. The lookup is itself filtered by that context, so an org_id

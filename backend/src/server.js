@@ -28,6 +28,10 @@ app.use(cors({
 // and skips on every later pass, so the 100kb default was still what applied.
 // A full-register import failed with "Server error" and no explanation.
 app.use(express.json({ limit: '25mb' }));
+// The operator page, served by the API rather than the tenant panel, so that
+// "am I acting as the operator or as a customer?" is answerable from the
+// address bar.
+app.use('/platform', express.static(require('path').join(__dirname, '../public')));
 
 app.get('/', (req, res) => res.send('AssetHub API running'));
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok', time: new Date().toISOString() }));
@@ -52,6 +56,7 @@ app.use('/finance', require('./routes/financeRoutes'));
 app.use('/custody', require('./routes/custodyRoutes'));
 app.use('/activity', require('./routes/activityRoutes'));
 app.use('/import', require('./routes/importRoutes'));
+app.use('/platform', require('./routes/platformRoutes'));
 
 
 // 404 for unknown routes
