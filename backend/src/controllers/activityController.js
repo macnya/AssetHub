@@ -1,11 +1,11 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { branchScopeFor } = require('../utils/scope');
 
-// GET /activity — one trail of everything anybody has done.
+// GET /activity â€” one trail of everything anybody has done.
 //
 // WHY MERGED RATHER THAN A SCAN LOG
 // scan_log answers "what happened to assets". Accountability needs "who did
-// what" — and that includes the approvals and refusals, which live in
+// what" â€” and that includes the approvals and refusals, which live in
 // asset_verification and custody_request rather than in the scan log. An
 // auditor asking "who approved that transfer?" gets no answer from movements
 // alone.
@@ -25,7 +25,7 @@ const SOURCES = `
     s.role                                   AS actor_role,
     a.asset_code, a.description,
     COALESCE(tl.branch, fl.branch)           AS branch,
-    NULLIF(CONCAT_WS(' → ',
+    NULLIF(CONCAT_WS(' â†’ ',
       NULLIF(COALESCE(fe.name, fl.physical_location, fl.branch), ''),
       NULLIF(COALESCE(te.name, tl.physical_location, tl.branch), '')), '')  AS detail,
     sl.notes                                 AS notes,
@@ -95,7 +95,7 @@ const SOURCES = `
     s.name, s.role,
     a.asset_code, a.description,
     COALESCE(tl.branch, fl.branch),
-    NULLIF(CONCAT_WS(' → ',
+    NULLIF(CONCAT_WS(' â†’ ',
       NULLIF(COALESCE(fe.name, fl.physical_location, fl.branch), ''),
       NULLIF(COALESCE(te.name, tl.physical_location, tl.branch, 'storage'), '')), ''),
     r.notes,
@@ -167,7 +167,7 @@ async function getActivity(req, res) {
     params.push(Number(offset) || 0);
     const offsetParam = `$${params.length}`;
 
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT * FROM (${SOURCES}) AS trail
        ${where}
        ORDER BY at DESC NULLS LAST
@@ -178,7 +178,7 @@ async function getActivity(req, res) {
     // A separate count so the page can say "showing 100 of 4,812" rather than
     // leaving the reader guessing whether there is more.
     const countParams = params.slice(0, params.length - 2);
-    const { rows: counted } = await pool.query(
+    const { rows: counted } = await db.query(
       `SELECT COUNT(*)::int AS n FROM (${SOURCES}) AS trail ${where}`,
       countParams
     );
@@ -200,12 +200,12 @@ async function getActivity(req, res) {
   }
 }
 
-// GET /activity/actions — the distinct action types, for the filter dropdown.
+// GET /activity/actions â€” the distinct action types, for the filter dropdown.
 // Read from the data rather than hardcoded, so a new kind of event appears in
 // the filter without anyone remembering to add it.
 async function getActions(req, res) {
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT DISTINCT action FROM (${SOURCES}) AS trail
        WHERE action IS NOT NULL ORDER BY action`
     );

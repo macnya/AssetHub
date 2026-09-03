@@ -28,7 +28,13 @@ frontend-scanner/   Expo. The phone app officers carry, works offline.
 docs/               Design notes and history. Read before changing SQL.
 ```
 
-## Running it
+## Not deployed yet?
+
+**docs/SETUP.md** walks through it from nothing — Supabase, Render, and a first
+login — assuming no prior experience with either. Do that before the rest of
+this page makes sense.
+
+## Running it locally
 
 ```bash
 cd backend && npm install && cp ../.env.example .env   # then fill it in

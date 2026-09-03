@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const pool = require('../db/pool');
+const { db, runInOrgContext } = require('../db/context');
 const { ROLES } = require('../middleware/authMiddleware');
 const crypto = require('crypto');
 
@@ -8,6 +8,31 @@ const crypto = require('crypto');
 // can't disagree. Raised from 6: an admin-issued starter password gets typed
 // by someone else and lives in a chat message until it's changed.
 const MIN_PASSWORD_LENGTH = 8;
+
+// Which organisation is signing in.
+//
+// it_staff is behind row-level security, so a query against it returns
+// nothing until the connection has an organisation set. At sign-in nobody
+// has authenticated yet, so the only thing that can say which organisation
+// it is is the code they typed.
+//
+// organisation itself is deliberately not policy-protected: the lookup that
+// decides the organisation cannot require already knowing it.
+//
+// With no code given, this falls back to the only organisation there is. The
+// moment a second one exists the fallback returns nothing and the code
+// becomes required - which is correct, and saves having to remember to
+// remove a default later.
+async function resolveOrg(code) {
+  const { rows } = code
+    ? await db.unscoped.query(
+        'SELECT id, status FROM organisation WHERE code = LOWER($1)', [code])
+    : await db.unscoped.query(
+        'SELECT id, status FROM organisation LIMIT 2');
+
+  return rows.length === 1 ? rows[0] : null;
+}
+
 
 // Register a new IT staff member (use this once to create your first admin, then restrict/remove access later)
 async function register(req, res) {
@@ -32,7 +57,7 @@ async function register(req, res) {
   }
 
   try {
-    const existing = await pool.query('SELECT id FROM it_staff WHERE LOWER(email) = LOWER($1)', [email]);
+    const existing = await db.query('SELECT id FROM it_staff WHERE LOWER(email) = LOWER($1)', [email]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'Email already registered' });
     }
@@ -42,7 +67,7 @@ async function register(req, res) {
     // must_change_password starts true: whoever the admin creates this for
     // did not choose this password, and it has almost certainly been sent to
     // them over WhatsApp or read out loud.
-    const result = await pool.query(
+    const result = await db.query(
       `INSERT INTO it_staff (name, email, password_hash, role, branch, must_change_password, password_changed_at)
        VALUES ($1, $2, $3, $4, $5, true, NOW())
        RETURNING id, name, email, role, branch, must_change_password`,
@@ -58,15 +83,32 @@ async function register(req, res) {
 
 // Log in an existing IT staff member
 async function login(req, res) {
-  const { email, password } = req.body;
+  const { email, password, org_code } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
   try {
-    const result = await pool.query('SELECT * FROM it_staff WHERE LOWER(email) = LOWER($1)', [email]);
-    const user = result.rows[0];
+    const org = await resolveOrg(org_code);
+
+    // The same message as a wrong password, deliberately. Anything more
+    // specific lets a stranger discover which organisations are here.
+    if (!org) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    if (org.status === 'suspended' || org.status === 'closed') {
+      return res.status(403).json({
+        error: 'This organisation is not active. Contact your administrator.',
+      });
+    }
+
+    const user = await runInOrgContext(org.id, async () => {
+      const result = await db.query(
+        'SELECT * FROM it_staff WHERE LOWER(email) = LOWER($1)', [email]);
+      return result.rows[0];
+    });
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -77,8 +119,12 @@ async function login(req, res) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // org_id travels in the token so that verifyToken can set the database
+    // context before it looks the account up. It is not trusted on its own:
+    // the lookup runs inside that context, so a forged organisation finds no
+    // account and fails.
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, org_id: org.id },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -94,6 +140,7 @@ async function login(req, res) {
         email: user.email,
         role: user.role,
         branch: user.branch || null,
+        org_id: org.id,
         must_change_password: user.must_change_password === true,
       },
     });
@@ -106,7 +153,7 @@ async function login(req, res) {
 // GET /auth/users
 async function getUsers(req, res) {
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `SELECT
           id,
           name,
@@ -154,7 +201,7 @@ async function updateUserRole(req, res) {
       return res.status(400).json({ error: 'A Branch Administrator must be given a branch' });
     }
 
-    const result = await pool.query(
+    const result = await db.query(
       `UPDATE it_staff
        SET role = $1, branch = $2
        WHERE id = $3
@@ -182,7 +229,7 @@ async function deleteUser(req, res) {
   }
 
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `DELETE FROM it_staff WHERE id = $1 RETURNING id, name, email, role`,
       [id]
     );
@@ -203,7 +250,7 @@ async function deleteUser(req, res) {
 async function refreshToken(req, res) {
   try {
     // Re-check the user still exists and hasn't been deleted/disabled since the original token was issued
-    const result = await pool.query(
+    const result = await db.query(
       'SELECT id, name, email, role, branch, must_change_password FROM it_staff WHERE id = $1',
       [req.user.id]
     );
@@ -213,13 +260,16 @@ async function refreshToken(req, res) {
       return res.status(401).json({ error: 'Account no longer exists' });
     }
 
+    // req.user.org_id came from verifyToken, which read it from the database
+    // rather than the old token. A refresh cannot be used to change which
+    // organisation the session belongs to.
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, org_id: req.user.org_id },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
 
-    res.json({ token, user });
+    res.json({ token, user: { ...user, org_id: req.user.org_id } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error during token refresh' });
@@ -249,7 +299,7 @@ async function changePassword(req, res) {
   }
 
   try {
-    const result = await pool.query('SELECT password_hash FROM it_staff WHERE id = $1', [req.user.id]);
+    const result = await db.query('SELECT password_hash FROM it_staff WHERE id = $1', [req.user.id]);
     const row = result.rows[0];
     if (!row) return res.status(401).json({ error: 'Account no longer exists' });
 
@@ -258,7 +308,7 @@ async function changePassword(req, res) {
 
     const password_hash = await bcrypt.hash(new_password, 10);
 
-    await pool.query(
+    await db.query(
       `UPDATE it_staff
        SET password_hash = $1, must_change_password = false, password_changed_at = NOW()
        WHERE id = $2`,
@@ -290,7 +340,7 @@ async function resetUserPassword(req, res) {
   try {
     const password_hash = await bcrypt.hash(new_password, 10);
 
-    const result = await pool.query(
+    const result = await db.query(
       `UPDATE it_staff
        SET password_hash = $1, must_change_password = true, password_changed_at = NOW()
        WHERE id = $2
@@ -360,10 +410,20 @@ async function issueServiceToken(req, res) {
   }
 
   try {
-    const { rows } = await pool.query(
-      'SELECT id, email, role, branch FROM it_staff WHERE LOWER(email) = LOWER($1)',
-      [email]
-    );
+    // Same organisation problem as login: the bot knows an email, not an
+    // organisation, and it_staff cannot be read without one.
+    const org = await resolveOrg(req.body.org_code);
+    if (!org) {
+      return res.status(404).json({ error: 'No staff account with that email' });
+    }
+
+    const rows = await runInOrgContext(org.id, async () => {
+      const r = await db.query(
+        'SELECT id, email, role, branch FROM it_staff WHERE LOWER(email) = LOWER($1)',
+        [email]
+      );
+      return r.rows;
+    });
     if (!rows.length) {
       return res.status(404).json({ error: 'No staff account with that email' });
     }
@@ -371,7 +431,7 @@ async function issueServiceToken(req, res) {
     const user = rows[0];
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, via: 'service' },
+      { id: user.id, email: user.email, role: user.role, org_id: org.id, via: 'service' },
       process.env.JWT_SECRET,
       { expiresIn: '5m' }
     );

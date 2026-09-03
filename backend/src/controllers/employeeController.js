@@ -1,8 +1,8 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 
 async function getAllEmployees(req, res) {
   try {
-    const result = await pool.query('SELECT * FROM employee ORDER BY name');
+    const result = await db.query('SELECT * FROM employee ORDER BY name');
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -15,7 +15,7 @@ async function createEmployee(req, res) {
   if (!name) return res.status(400).json({ error: 'name is required' });
 
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `INSERT INTO employee (name, department, branch, email) VALUES ($1,$2,$3,$4) RETURNING *`,
       [name, department || null, branch || null, email || null]
     );

@@ -25,7 +25,7 @@ async function createAssignment(req, res) {
     });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query("BEGIN");
@@ -126,7 +126,7 @@ async function returnAssignment(req, res) {
   const { latitude, longitude } = req.body;
   const scanned_by = req.user.id;
 
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query("BEGIN");
@@ -210,7 +210,7 @@ async function getAssetHistory(req, res) {
   const { asset_id } = req.params;
 
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `SELECT
           sl.*,
           fe.name AS from_employee_name,

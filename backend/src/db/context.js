@@ -34,7 +34,7 @@ async function runInOrgContext(orgId, fn) {
   try {
     await client.query('BEGIN');
     await client.query('SELECT set_config($1, $2, true)', ['app.org_id', String(orgId)]);
-    const result = await orgContext.run({ client, orgId }, fn);
+    const result = await orgContext.run({ client, orgId, depth: 0 }, fn);
     await client.query('COMMIT');
     return result;
   } catch (err) {
@@ -45,6 +45,49 @@ async function runInOrgContext(orgId, fn) {
   } finally {
     client.release();
   }
+}
+
+// Eight controllers open their own transaction: connect(), BEGIN, work,
+// COMMIT, release(). That was right when each request had no transaction of
+// its own. It is wrong now — a second checkout would get a different
+// connection, one with no app.org_id on it, and every query would quietly see
+// nothing.
+//
+// What those controllers actually want is to undo their own work on failure
+// without destroying the whole request. That is a savepoint. So connect()
+// hands back the request's existing client with BEGIN, COMMIT and ROLLBACK
+// rewritten as savepoint operations, and release() doing nothing because the
+// connection is not theirs to return.
+//
+// The controllers are left exactly as they are. Their comments about
+// atomicity stay true, which matters: the import's rollback-on-any-row-failing
+// and the delete's refusal to half-remove an asset both still hold.
+function savepointClient(client, store) {
+  return {
+    query(text, params) {
+      if (typeof text === 'string') {
+        const sql = text.trim().toUpperCase();
+        if (sql === 'BEGIN') {
+          store.depth += 1;
+          return client.query(`SAVEPOINT sp_${store.depth}`);
+        }
+        if (sql === 'COMMIT') {
+          const name = `sp_${store.depth}`;
+          store.depth = Math.max(0, store.depth - 1);
+          return client.query(`RELEASE SAVEPOINT ${name}`);
+        }
+        if (sql === 'ROLLBACK') {
+          const name = `sp_${store.depth}`;
+          store.depth = Math.max(0, store.depth - 1);
+          return client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+        }
+      }
+      return client.query(text, params);
+    },
+    // Deliberately nothing. Returning this connection to the pool mid-request
+    // would strand every query that came after it.
+    release() {},
+  };
 }
 
 const db = {
@@ -69,6 +112,15 @@ const db = {
 
   currentOrgId() {
     return orgContext.getStore()?.orgId ?? null;
+  },
+
+  // The transaction pattern, redirected onto the request's own connection.
+  async connect() {
+    const store = orgContext.getStore();
+    if (!store) {
+      throw new Error('No organisation context for this transaction.');
+    }
+    return savepointClient(store.client, store);
   },
 
   // For the few places that legitimately run before an organisation is known:

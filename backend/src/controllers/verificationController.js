@@ -1,8 +1,8 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { ASSET_CONDITIONS, isValidCondition } = require('../constants/assetConditions');
 const { branchScopeFor } = require('../utils/scope');
 
-// POST /assets/:asset_code/verify — record a physical inspection.
+// POST /assets/:asset_code/verify â€” record a physical inspection.
 //
 // The verification is written as PENDING. asset.condition is deliberately NOT
 // updated here: what an officer observed is a claim until an admin who is not
@@ -22,7 +22,7 @@ async function verifyAsset(req, res) {
   }
 
   try {
-    const assetResult = await pool.query(
+    const assetResult = await db.query(
       `SELECT a.id, l.branch
        FROM asset a
        LEFT JOIN assignment ag ON ag.asset_id = a.id AND ag.returned_date IS NULL
@@ -42,7 +42,7 @@ async function verifyAsset(req, res) {
       return res.status(403).json({ error: 'This asset is not at your branch' });
     }
 
-    const result = await pool.query(
+    const result = await db.query(
       `INSERT INTO asset_verification
          (asset_id, verified_by, condition, remarks, latitude, longitude, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'pending')
@@ -60,7 +60,7 @@ async function verifyAsset(req, res) {
   }
 }
 
-// GET /verifications — report of verifications, with assignment, branch and GPS.
+// GET /verifications â€” report of verifications, with assignment, branch and GPS.
 //
 // ?status=pending narrows to the approval queue; the default shows everything
 // so the report remains a complete record.
@@ -128,7 +128,7 @@ async function getVerificationReport(req, res) {
 
     query += ` ORDER BY v.verified_at DESC LIMIT 1000`;
 
-    const result = await pool.query(query, params);
+    const result = await db.query(query, params);
 
     const rows = result.rows.map((r) => ({
       ...r,
@@ -145,23 +145,23 @@ async function getVerificationReport(req, res) {
   }
 }
 
-// GET /verifications/pending/count — for the badge in the navigation.
+// GET /verifications/pending/count â€” for the badge in the navigation.
 // Cheap enough to call on every page load; there is a partial index on status.
 async function getPendingCount(req, res) {
   try {
     const [verifications, assets, custodyRequests] = await Promise.all([
-      pool.query(
+      db.query(
         `SELECT COUNT(*)::int AS n FROM asset_verification
          WHERE status = 'pending' AND verified_by <> $1`,
         [req.user.id]
       ),
-      pool.query(
+      db.query(
         `SELECT COUNT(*)::int AS n FROM asset
          WHERE approval_status = 'pending'
            AND (created_by IS NULL OR created_by <> $1)`,
         [req.user.id]
       ),
-      pool.query(
+      db.query(
         `SELECT COUNT(*)::int AS n FROM custody_request
          WHERE status = 'pending' AND requested_by <> $1`,
         [req.user.id]
@@ -188,7 +188,7 @@ async function getPendingCount(req, res) {
 // so this check failing open would not be enough to bypass it.
 async function approveVerification(req, res) {
   const { id } = req.params;
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
@@ -272,7 +272,7 @@ async function rejectVerification(req, res) {
   }
 
   try {
-    const existing = await pool.query(
+    const existing = await db.query(
       'SELECT status, verified_by FROM asset_verification WHERE id = $1',
       [id]
     );
@@ -286,7 +286,7 @@ async function rejectVerification(req, res) {
       return res.status(403).json({ error: 'You cannot review your own verification' });
     }
 
-    const updated = await pool.query(
+    const updated = await db.query(
       `UPDATE asset_verification
        SET status = 'rejected', approved_by = $1, approved_at = NOW(), rejection_reason = $2
        WHERE id = $3
@@ -301,11 +301,11 @@ async function rejectVerification(req, res) {
   }
 }
 
-// GET /assets/:asset_code/verifications — verification history for one asset
+// GET /assets/:asset_code/verifications â€” verification history for one asset
 async function getVerificationsForAsset(req, res) {
   const { asset_code } = req.params;
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `SELECT v.*, s.name AS verified_by_name, ap.name AS approved_by_name
        FROM asset_verification v
        JOIN asset a ON a.id = v.asset_id
@@ -322,7 +322,7 @@ async function getVerificationsForAsset(req, res) {
   }
 }
 
-// PATCH /verifications/:id — correct a condition or remarks entered by mistake.
+// PATCH /verifications/:id â€” correct a condition or remarks entered by mistake.
 //
 // Admin only. The correction is RECORDED rather than applied silently: an asset
 // register is an audit document, and "why did this go from Faulty to Good in
@@ -337,7 +337,7 @@ async function updateVerification(req, res) {
     });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');

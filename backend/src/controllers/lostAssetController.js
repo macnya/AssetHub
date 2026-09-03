@@ -1,6 +1,6 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 
-// POST /lost-assets — report an asset as lost
+// POST /lost-assets â€” report an asset as lost
 async function createLostAssetRecord(req, res) {
   const { asset_id, notes } = req.body;
   const reported_by = req.user.id;
@@ -9,7 +9,7 @@ async function createLostAssetRecord(req, res) {
     return res.status(400).json({ error: 'asset_id is required' });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
 
@@ -60,7 +60,7 @@ async function createLostAssetRecord(req, res) {
 
 async function getAllLostAssets(req, res) {
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT lr.*, a.asset_code, a.description,
         e.name AS last_known_employee_name, l.branch AS last_known_branch,
         s.name AS reported_by_name

@@ -1,12 +1,12 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const PDFDocument = require('pdfkit');
 const { branchScopeFor } = require('../utils/scope');
 
-// GET /dashboard/stats — single aggregated payload for the admin dashboard
+// GET /dashboard/stats â€” single aggregated payload for the admin dashboard
 async function getDashboardStats(req, res) {
   // A Branch Administrator's dashboard counts only their own branch. Every
   // query below therefore takes the same optional filter rather than one of
-  // them being missed — the tile totals and the list behind them have to
+  // them being missed â€” the tile totals and the list behind them have to
   // agree or the dashboard is lying.
   const scopeBranch = branchScopeFor(req);
   const scoped = (alias) =>
@@ -29,9 +29,9 @@ async function getDashboardStats(req, res) {
       assetsByBranchResult,
       recentActivityResult,
     ] = await Promise.all([
-      pool.query(`SELECT COUNT(DISTINCT a.id)::int AS count FROM asset a ${ASSET_SCOPE}`, args),
+      db.query(`SELECT COUNT(DISTINCT a.id)::int AS count FROM asset a ${ASSET_SCOPE}`, args),
 
-      pool.query(
+      db.query(
         `SELECT a.status, COUNT(DISTINCT a.id)::int AS count
          FROM asset a ${ASSET_SCOPE}
          GROUP BY a.status`,
@@ -39,14 +39,14 @@ async function getDashboardStats(req, res) {
       ),
 
       scopeBranch
-        ? pool.query(`SELECT COUNT(*)::int AS count FROM employee e WHERE e.branch = $1`, args)
-        : pool.query(`SELECT COUNT(*)::int AS count FROM employee`),
+        ? db.query(`SELECT COUNT(*)::int AS count FROM employee e WHERE e.branch = $1`, args)
+        : db.query(`SELECT COUNT(*)::int AS count FROM employee`),
 
       scopeBranch
-        ? pool.query(`SELECT 1::int AS count`)
-        : pool.query(`SELECT COUNT(DISTINCT branch)::int AS count FROM location`),
+        ? db.query(`SELECT 1::int AS count`)
+        : db.query(`SELECT COUNT(DISTINCT branch)::int AS count FROM location`),
 
-      pool.query(
+      db.query(
         `SELECT COALESCE(ac.name, 'Uncategorized') AS name, COUNT(DISTINCT a.id)::int AS count
          FROM asset a
          LEFT JOIN asset_category ac ON a.asset_category_id = ac.id
@@ -56,7 +56,7 @@ async function getDashboardStats(req, res) {
         args
       ),
 
-      pool.query(
+      db.query(
         `SELECT l.branch, COUNT(DISTINCT ag.asset_id)::int AS count
          FROM assignment ag
          JOIN location l ON ag.location_id = l.id
@@ -66,7 +66,7 @@ async function getDashboardStats(req, res) {
         args
       ),
 
-      pool.query(
+      db.query(
         `SELECT sl.action, sl.timestamp, a.asset_code, a.description
          FROM scan_log sl
          JOIN asset a ON sl.asset_id = a.id
@@ -120,7 +120,7 @@ async function getAssetLocations(req, res) {
   const scopeBranch = branchScopeFor(req);
 
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT
         a.id,
         a.asset_code,
@@ -177,13 +177,13 @@ async function getAssetLocations(req, res) {
 async function getSummaryReportPdf(req, res) {
   try {
     const [totalsResult, categoryResult, branchResult] = await Promise.all([
-      pool.query(`
+      db.query(`
         SELECT
           COUNT(*)::int AS total_count,
           COALESCE(SUM(purchase_price), 0)::numeric AS total_value
         FROM asset
       `),
-      pool.query(`
+      db.query(`
         SELECT
           COALESCE(ac.name, 'Uncategorized') AS name,
           COUNT(a.id)::int AS count,
@@ -193,7 +193,7 @@ async function getSummaryReportPdf(req, res) {
         GROUP BY ac.name
         ORDER BY value DESC
       `),
-      pool.query(`
+      db.query(`
         SELECT
           COALESCE(l.branch, 'Unassigned / In Storage') AS branch,
           COUNT(DISTINCT a.id)::int AS count,

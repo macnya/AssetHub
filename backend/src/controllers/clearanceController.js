@@ -1,4 +1,4 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { branchScopeFor } = require('../utils/scope');
 
 // Exit clearance, implementing HR Manual 8.10.1 and 8.10.2.
@@ -16,7 +16,7 @@ function addMonths(date, months) {
   return d.toISOString().slice(0, 10);
 }
 
-// GET /clearances — the queue, newest first.
+// GET /clearances â€” the queue, newest first.
 async function listClearances(req, res) {
   const { status } = req.query;
   const scopeBranch = branchScopeFor(req);
@@ -34,7 +34,7 @@ async function listClearances(req, res) {
       clauses.push(`e.branch = $${params.length}`);
     }
 
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT
           c.id, c.last_working_day, c.deadline, c.status, c.reason,
           c.involves_fraud, c.opened_at, c.completed_at, c.notes,
@@ -78,12 +78,12 @@ async function listClearances(req, res) {
   }
 }
 
-// GET /clearances/:id — one clearance with its items.
+// GET /clearances/:id â€” one clearance with its items.
 async function getClearance(req, res) {
   const { id } = req.params;
 
   try {
-    const header = await pool.query(
+    const header = await db.query(
       `SELECT c.*, e.name AS employee_name, e.branch, e.department, e.email,
               o.name AS opened_by_name, cb.name AS completed_by_name
        FROM exit_clearance c
@@ -95,7 +95,7 @@ async function getClearance(req, res) {
     );
     if (!header.rows.length) return res.status(404).json({ error: 'Clearance not found' });
 
-    const items = await pool.query(
+    const items = await db.query(
       `SELECT i.id, i.asset_id, i.value_at_exit, i.outcome, i.notes, i.resolved_at,
               a.asset_code, a.description, a.condition, a.serial_number,
               ac.name AS category,
@@ -116,7 +116,7 @@ async function getClearance(req, res) {
   }
 }
 
-// GET /clearances/holdings/:employee_id — what a member of staff holds now.
+// GET /clearances/holdings/:employee_id â€” what a member of staff holds now.
 //
 // Used before opening a clearance, so P&C can see what they are committing to
 // chase. Also answers the everyday question "what does this person have?".
@@ -125,7 +125,7 @@ async function getEmployeeHoldings(req, res) {
   const scopeBranch = branchScopeFor(req);
 
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT a.id, a.asset_code, a.description, a.condition, a.purchase_price,
               ac.name AS category, l.branch, l.physical_location,
               ag.assigned_date
@@ -152,7 +152,7 @@ async function getEmployeeHoldings(req, res) {
   }
 }
 
-// POST /clearances — open a clearance for a leaver.
+// POST /clearances â€” open a clearance for a leaver.
 //
 // Snapshots everything they hold at this moment, with the value of each. The
 // list is deliberately frozen: 8.10.1 makes assets due back on the last working
@@ -165,7 +165,7 @@ async function openClearance(req, res) {
     return res.status(400).json({ error: 'employee_id and last_working_day are required' });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
 
@@ -235,7 +235,7 @@ async function openClearance(req, res) {
   }
 }
 
-// PATCH /clearances/:id/items/:item_id — record what happened to one asset.
+// PATCH /clearances/:id/items/:item_id â€” record what happened to one asset.
 //
 // 'returned' closes the assignment, so the register reflects reality rather
 // than leaving the asset against someone who no longer works here. That single
@@ -249,7 +249,7 @@ async function resolveItem(req, res) {
     return res.status(400).json({ error: `outcome must be one of: ${valid.join(', ')}` });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
 
@@ -321,7 +321,7 @@ async function resolveItem(req, res) {
 async function completeClearance(req, res) {
   const { id } = req.params;
 
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
 

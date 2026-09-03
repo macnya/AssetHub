@@ -1,4 +1,4 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { branchScopeFor } = require('../utils/scope');
 const { ASSET_CONDITIONS, isValidCondition } = require('../constants/assetConditions');
 
@@ -13,10 +13,10 @@ const { ASSET_CONDITIONS, isValidCondition } = require('../constants/assetCondit
 // rather than assumed.
 //
 // Nothing here writes to `assignment` until approval, so no existing query
-// needs to learn about pending states — the register simply does not show a
+// needs to learn about pending states â€” the register simply does not show a
 // change that has not happened yet.
 
-// POST /custody/request — ask to assign an asset, or return it to storage.
+// POST /custody/request â€” ask to assign an asset, or return it to storage.
 async function requestChange(req, res) {
   const {
     asset_id, kind,
@@ -48,13 +48,13 @@ async function requestChange(req, res) {
     });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
 
     // Where the asset is now, so the approver can see the move without
-    // reconstructing it — and so the record stands even if custody changes
+    // reconstructing it â€” and so the record stands even if custody changes
     // again before the request is reviewed.
     const current = await client.query(
       `SELECT ag.employee_id, ag.location_id, l.branch
@@ -130,7 +130,7 @@ async function requestChange(req, res) {
   }
 }
 
-// GET /custody/pending — the approval queue.
+// GET /custody/pending â€” the approval queue.
 //
 // Excludes the caller's own requests: they cannot approve those, and a queue
 // containing work you are forbidden to action is just noise.
@@ -138,7 +138,7 @@ async function getPending(req, res) {
   const scope = branchScopeFor(req);
 
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT r.*,
               a.asset_code, a.description, a.condition AS current_condition,
               ac.name AS category,
@@ -181,7 +181,7 @@ async function getPending(req, res) {
 // all here rather than at request time is what makes a rejection cost nothing.
 async function approve(req, res) {
   const { id } = req.params;
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
@@ -244,7 +244,7 @@ async function approve(req, res) {
       );
 
       // The condition observed at handover becomes a verification in its own
-      // right — approved, because the administrator approving the handover is
+      // right â€” approved, because the administrator approving the handover is
       // the second pair of eyes the rule asks for.
       if (r.condition_at_handover) {
         const v = await client.query(
@@ -320,7 +320,7 @@ async function reject(req, res) {
   }
 
   try {
-    const found = await pool.query(
+    const found = await db.query(
       'SELECT status, requested_by FROM custody_request WHERE id = $1', [id]
     );
     if (!found.rows.length) return res.status(404).json({ error: 'Request not found' });
@@ -331,7 +331,7 @@ async function reject(req, res) {
       return res.status(403).json({ error: 'You cannot review your own request' });
     }
 
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `UPDATE custody_request
        SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), rejection_reason = $2
        WHERE id = $3
@@ -346,12 +346,12 @@ async function reject(req, res) {
   }
 }
 
-// GET /custody/asset/:asset_id — request history for one asset, for its timeline.
+// GET /custody/asset/:asset_id â€” request history for one asset, for its timeline.
 async function getForAsset(req, res) {
   const { asset_id } = req.params;
 
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT r.*, s.name AS requested_by_name, rv.name AS reviewed_by_name,
               te.name AS to_employee, tl.branch AS to_branch
        FROM custody_request r

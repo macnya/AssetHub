@@ -1,13 +1,13 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 
 // Deleting assets from the register.
 //
 // TWO DIFFERENT THINGS ARE CALLED "DELETE"
 //
-// Removing a mistake — a row typed twice, an import that brought in junk.
+// Removing a mistake â€” a row typed twice, an import that brought in junk.
 // Nothing has ever happened to it, so removing it loses nothing and is right.
 //
-// Removing a real asset — it has verifications, custody history, perhaps a
+// Removing a real asset â€” it has verifications, custody history, perhaps a
 // disposal record. Deleting it destroys the audit trail. The register is an
 // audit document; Finance may have reported on this asset and an auditor may
 // have signed it off. What is wanted there is "Mark as disposed" or "Report as
@@ -51,7 +51,7 @@ async function historyFor(client, assetId, refs) {
 
 // A count of assignments alone is not history: the import created one for every
 // asset that had a location, so every asset has at least one. What matters is
-// whether anybody has DONE anything — verified it, moved it, disposed of it.
+// whether anybody has DONE anything â€” verified it, moved it, disposed of it.
 const IMPORT_ONLY = new Set(['assignment', 'scan_log']);
 
 function isJustImported(counts) {
@@ -61,13 +61,13 @@ function isJustImported(counts) {
   return (counts.assignment || 0) <= 1 && (counts.scan_log || 0) <= 1;
 }
 
-// GET /assets/:asset_code/deletable — can this be removed, and if not, why not?
+// GET /assets/:asset_code/deletable â€” can this be removed, and if not, why not?
 //
 // Asked before the button is shown, so nobody is offered an action that will be
 // refused.
 async function checkDeletable(req, res) {
   const { asset_code } = req.params;
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     const { rows } = await client.query(
@@ -106,7 +106,7 @@ async function deleteAsset(req, res) {
     return res.status(400).json({ error: 'A reason is required. Deleting a register entry should be explicable.' });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
@@ -164,7 +164,7 @@ async function deleteAsset(req, res) {
   }
 }
 
-// POST /assets/delete-batch — remove several at once.
+// POST /assets/delete-batch â€” remove several at once.
 //
 // Deliberately not "delete everything". A whole-register wipe has no legitimate
 // use that a restore from backup does not serve better, and offering it as a
@@ -181,7 +181,7 @@ async function deleteBatch(req, res) {
   // Removing an import that went wrong is the main honest use of bulk delete,
   // so a batch can be named instead of listing its codes.
   if (batch_id) {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       'SELECT created_codes FROM import_batch WHERE id = $1', [batch_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Import batch not found' });
@@ -191,7 +191,7 @@ async function deleteBatch(req, res) {
   if (!codes.length) return res.status(400).json({ error: 'Nothing to delete' });
   if (codes.length > 5000) return res.status(400).json({ error: 'Too many at once' });
 
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');

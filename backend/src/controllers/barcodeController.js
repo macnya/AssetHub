@@ -1,11 +1,11 @@
 const bwipjs = require('bwip-js');
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 
 async function getAssetBarcode(req, res) {
   const { asset_code } = req.params;
 
   try {
-    const result = await pool.query('SELECT id FROM asset WHERE asset_code = $1', [asset_code]);
+    const result = await db.query('SELECT id FROM asset WHERE asset_code = $1', [asset_code]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Asset not found' });
     }

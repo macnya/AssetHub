@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const pool = require('../db/pool');
+const { db, runInOrgContext } = require('../db/context');
 
 // Names have changed twice. "Branch Manager" became "Branch Administrator" —
 // the role administers one branch's assets, as opposed to IT Admin who
@@ -64,9 +64,20 @@ async function verifyToken(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  try {
-    const result = await pool.query(
-      'SELECT id, email, role, branch, password_changed_at, must_change_password FROM it_staff WHERE id = $1',
+  // Tokens issued before organisations existed carry no org_id. There is no
+  // safe guess to make, so they are refused and the person signs in again.
+  if (!decoded.org_id) {
+    return res.status(401).json({ error: 'Please sign in again.' });
+  }
+
+  // Everything from here runs inside one organisation's context, on one
+  // connection, including the account lookup below and every query the route
+  // will make. The lookup is itself filtered by that context, so an org_id
+  // forged into a token finds no account rather than reaching another
+  // organisation's data.
+  runInOrgContext(decoded.org_id, async () => {
+    const result = await db.query(
+      'SELECT id, email, role, branch, org_id, password_changed_at, must_change_password FROM it_staff WHERE id = $1',
       [decoded.id]
     );
     const account = result.rows[0];
@@ -104,12 +115,25 @@ async function verifyToken(req, res, next) {
       email: account.email,
       role: canonicalRole(account.role),
       branch: account.branch || null,
+      org_id: account.org_id,
     };
-    next();
-  } catch (err) {
+
+    // The promise settles when the response does, which is what holds the
+    // connection and its transaction open for the whole request rather than
+    // closing the moment next() returns. 'close' as well as 'finish' because
+    // a client that hangs up mid-response fires only the former, and without
+    // it the connection would be held until the pool timed it out.
+    return new Promise((resolve) => {
+      res.on('finish', resolve);
+      res.on('close', resolve);
+      next();
+    });
+  }).catch((err) => {
     console.error('Auth check failed:', err);
-    return res.status(500).json({ error: 'Could not verify your session' });
-  }
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Could not verify your session' });
+    }
+  });
 }
 
 function requireAdmin(req, res, next) {

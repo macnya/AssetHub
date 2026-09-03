@@ -1,4 +1,4 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const {
   ASSET_CONDITIONS,
   DEFAULT_CONDITION,
@@ -20,7 +20,7 @@ const ASSET_JOINS = `
 `;
 
 // `assigned` and `sort` are new. Assignment state can't be read off
-// asset.status alone — an asset can be In Stock with a stale open assignment —
+// asset.status alone â€” an asset can be In Stock with a stale open assignment â€”
 // so it's derived from whether a live assignment row exists.
 function buildAssetFilter({ search, category, status, branch, assigned, includePending }, scopeBranch) {
   const clauses = [];
@@ -77,7 +77,7 @@ const SORTS = {
   description: 'a.description ASC',
 };
 
-// GET /assets — paginated list.
+// GET /assets â€” paginated list.
 //
 // Returns { data, total, limit, offset } rather than a bare array. The old
 // version applied a hard LIMIT 200 with no offset and no count, so against a
@@ -95,13 +95,13 @@ async function getAllAssets(req, res) {
   try {
     const { where, params } = buildAssetFilter(req.query, branchScopeFor(req));
 
-    const countResult = await pool.query(
+    const countResult = await db.query(
       `SELECT COUNT(DISTINCT a.id)::int AS total ${ASSET_JOINS} ${where}`,
       params
     );
 
     const pageParams = [...params, limit, offset];
-    const result = await pool.query(
+    const result = await db.query(
       `SELECT a.*, ac.name AS category_name,
               ag.employee_id, ag.location_id,
               e.name AS employee_name, l.branch, l.physical_location
@@ -124,10 +124,10 @@ async function getAllAssets(req, res) {
   }
 }
 
-// GET /assets/categories — list all asset categories (for dropdowns)
+// GET /assets/categories â€” list all asset categories (for dropdowns)
 async function getAllCategories(req, res) {
   try {
-    const result = await pool.query('SELECT id, name FROM asset_category ORDER BY name');
+    const result = await db.query('SELECT id, name FROM asset_category ORDER BY name');
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -135,21 +135,21 @@ async function getAllCategories(req, res) {
   }
 }
 
-// GET /assets/conditions — the canonical condition vocabulary, so the web and
+// GET /assets/conditions â€” the canonical condition vocabulary, so the web and
 // mobile clients don't have to keep their own copies in sync by hand.
 async function getAllConditions(req, res) {
   res.json(ASSET_CONDITIONS);
 }
 
-// GET /assets/filters — everything the filter bar needs, in one request
+// GET /assets/filters â€” everything the filter bar needs, in one request
 // rather than three.
 async function getFilterOptions(req, res) {
   try {
     const scopeBranch = branchScopeFor(req);
 
     const [categories, branches] = await Promise.all([
-      pool.query('SELECT id, name FROM asset_category ORDER BY name'),
-      pool.query(
+      db.query('SELECT id, name FROM asset_category ORDER BY name'),
+      db.query(
         `SELECT DISTINCT branch FROM location
          WHERE branch IS NOT NULL AND branch <> ''
          ORDER BY branch`
@@ -171,12 +171,12 @@ async function getFilterOptions(req, res) {
   }
 }
 
-// GET /assets/:asset_code — lookup a single asset by its QR/barcode value (used by the scanner)
+// GET /assets/:asset_code â€” lookup a single asset by its QR/barcode value (used by the scanner)
 async function getAssetByCode(req, res) {
   const { asset_code } = req.params;
 
   try {
-    const assetResult = await pool.query(
+    const assetResult = await db.query(
       `SELECT a.*, ac.name AS category_name
        FROM asset a
        LEFT JOIN asset_category ac ON a.asset_category_id = ac.id
@@ -190,7 +190,7 @@ async function getAssetByCode(req, res) {
 
     const asset = assetResult.rows[0];
 
-    const assignmentResult = await pool.query(
+    const assignmentResult = await db.query(
       `SELECT ag.*, e.name AS employee_name, e.department AS employee_department,
               e.branch AS employee_branch, l.branch, l.department, l.physical_location
        FROM assignment ag
@@ -215,7 +215,7 @@ async function getAssetByCode(req, res) {
     // over, who took it, who returned it to stock, and who physically
     // verified it. scan_log and asset_verification are separate tables, so
     // neither alone answers "what has happened to this asset".
-    const timelineResult = await pool.query(
+    const timelineResult = await db.query(
       `SELECT * FROM (
          SELECT
            'scan-' || sl.id::text        AS event_id,
@@ -268,12 +268,12 @@ async function getAssetByCode(req, res) {
     }));
 
     // The newest event carrying GPS is, by definition, where the asset was
-    // last seen — so this comes free rather than costing a second query.
+    // last seen â€” so this comes free rather than costing a second query.
     const lastSeenEvent = timeline.find((e) => e.latitude != null && e.longitude != null) || null;
 
     // If nobody holds it now, who held it last? Useful when chasing an asset
     // that reads In Stock but isn't on the shelf.
-    const lastHolderResult = await pool.query(
+    const lastHolderResult = await db.query(
       `SELECT e.name AS employee_name, l.branch, l.physical_location, ag.returned_date
        FROM assignment ag
        LEFT JOIN employee e ON ag.employee_id = e.id
@@ -307,7 +307,7 @@ async function getAssetByCode(req, res) {
   }
 }
 
-// POST /assets — create a new asset.
+// POST /assets â€” create a new asset.
 //
 // A Branch Administrator may register equipment that arrives at their branch,
 // but it is held as PENDING and stays out of the register until an admin
@@ -335,7 +335,7 @@ async function createAsset(req, res) {
   const needsApproval = req.user.role === ROLES.BRANCH_ADMIN;
 
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `INSERT INTO asset
         (asset_code, description, asset_category_id, serial_number, date_of_purchase,
          purchase_price, supplier, useful_life_years, remaining_life, monthly_depreciation,
@@ -367,11 +367,11 @@ async function createAsset(req, res) {
     res.status(500).json({ error: 'Failed to create asset' });
   }
 }
-// PATCH /assets/:asset_code — admin correction of asset details.
+// PATCH /assets/:asset_code â€” admin correction of asset details.
 //
 // asset_code is deliberately NOT editable: it's the identity printed on the
 // barcode label stuck to the equipment, and changing it here would silently
-// orphan that label. status is also excluded — it's derived from assignment,
+// orphan that label. status is also excluded â€” it's derived from assignment,
 // disposal and loss actions, so editing it directly would desync it from the
 // assignment table.
 const EDITABLE = [
@@ -409,7 +409,7 @@ async function updateAsset(req, res) {
     const assignments = cols.map((col, i) => `${col} = $${i + 1}`).join(', ');
     const values = cols.map((col) => updates[col]);
 
-    const result = await pool.query(
+    const result = await db.query(
       `UPDATE asset SET ${assignments} WHERE asset_code = $${cols.length + 1} RETURNING *`,
       [...values, asset_code]
     );
@@ -424,13 +424,13 @@ async function updateAsset(req, res) {
     res.status(500).json({ error: 'Failed to update asset' });
   }
 }
-// GET /assets/pending — the approval queue.
+// GET /assets/pending â€” the approval queue.
 //
 // Excludes the caller's own submissions: they cannot approve those, and a queue
 // containing work you are forbidden to action is just noise.
 async function getPendingAssets(req, res) {
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT a.*, ac.name AS category_name, s.name AS created_by_name, s.branch AS created_by_branch
        FROM asset a
        LEFT JOIN asset_category ac ON ac.id = a.asset_category_id
@@ -461,7 +461,7 @@ async function reviewAsset(req, res) {
   }
 
   try {
-    const existing = await pool.query(
+    const existing = await db.query(
       'SELECT id, approval_status, created_by FROM asset WHERE asset_code = $1',
       [asset_code]
     );
@@ -479,7 +479,7 @@ async function reviewAsset(req, res) {
       });
     }
 
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `UPDATE asset
        SET approval_status = $1, approved_by = $2, approved_at = NOW(), rejection_reason = $3
        WHERE asset_code = $4

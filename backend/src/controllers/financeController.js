@@ -1,10 +1,10 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { branchScopeFor } = require('../utils/scope');
 
 // Financial reporting over the register.
 //
 // WHAT FINANCE ACTUALLY NEEDS
-// Not the operational view — who scanned what, which labels are printed — but
+// Not the operational view â€” who scanned what, which labels are printed â€” but
 // the numbers that reconcile to the ledger: what the organisation owns, what it
 // is worth, what has been written off, and what a leaver owes.
 //
@@ -16,13 +16,13 @@ const { branchScopeFor } = require('../utils/scope');
 // Every query respects branch scope, so the same endpoints serve a Branch
 // Administrator looking at their own branch.
 
-// GET /finance/summary — the headline reconciliation figures.
+// GET /finance/summary â€” the headline reconciliation figures.
 async function getSummary(req, res) {
   const scope = branchScopeFor(req);
 
   try {
     const [byCategory, byStatus, byBranch, unpriced] = await Promise.all([
-      pool.query(
+      db.query(
         `SELECT COALESCE(ac.name, 'Uncategorised') AS category,
                 COUNT(DISTINCT a.id)::int AS assets,
                 COUNT(a.purchase_price)::int AS priced,
@@ -40,7 +40,7 @@ async function getSummary(req, res) {
         [scope]
       ),
 
-      pool.query(
+      db.query(
         `SELECT a.status,
                 COUNT(DISTINCT a.id)::int AS assets,
                 COALESCE(SUM(a.purchase_price), 0)::numeric AS cost,
@@ -55,7 +55,7 @@ async function getSummary(req, res) {
         [scope]
       ),
 
-      pool.query(
+      db.query(
         `SELECT l.branch,
                 COUNT(DISTINCT a.id)::int AS assets,
                 COALESCE(SUM(a.purchase_price), 0)::numeric AS cost,
@@ -71,9 +71,9 @@ async function getSummary(req, res) {
       ),
 
       // Assets with no recorded cost. Finance should see this rather than have
-      // a total quietly understate itself — the register already did that once,
+      // a total quietly understate itself â€” the register already did that once,
       // by a factor of sixty-six.
-      pool.query(
+      db.query(
         `SELECT COUNT(*)::int AS n
          FROM asset a
          LEFT JOIN assignment ag ON ag.asset_id = a.id AND ag.returned_date IS NULL
@@ -98,7 +98,7 @@ async function getSummary(req, res) {
   }
 }
 
-// GET /finance/disposals — what left the register, and what it realised.
+// GET /finance/disposals â€” what left the register, and what it realised.
 //
 // The disposal record already carries proceeds and gain or loss, which is the
 // figure that reaches the accounts. Nothing here recalculates it.
@@ -121,7 +121,7 @@ async function getDisposals(req, res) {
         : ` AND d.disposal_month <= $${params.length}`;
     }
 
-        const { rows } = await pool.query(
+        const { rows } = await db.query(
       `SELECT a.asset_code, a.description,
               ac.name AS category,
               d.disposal_month, d.base_gross_value, d.accumulated_depreciation,
@@ -139,8 +139,8 @@ async function getDisposals(req, res) {
        -- had changed hands. Adding returned_date IS NULL fixes the count but
        -- empties the branch: 166 of 175 disposals have no open assignment,
        -- because closing it is part of disposing of the asset. LATERAL takes
-       -- exactly one row — the open assignment if there is one, otherwise the
-       -- most recently returned — so each disposal is counted once AND keeps
+       -- exactly one row â€” the open assignment if there is one, otherwise the
+       -- most recently returned â€” so each disposal is counted once AND keeps
        -- the branch a scoped user filters on.
        LEFT JOIN LATERAL (
          SELECT lo.branch
@@ -172,16 +172,16 @@ async function getDisposals(req, res) {
   }
 }
 
-// GET /finance/losses — written off, and what it cost.
+// GET /finance/losses â€” written off, and what it cost.
 //
 // The loss record keeps the last known holder and location on the record
-// itself, rather than relying on the assignment still being open — which it
+// itself, rather than relying on the assignment still being open â€” which it
 // will not be once the asset is written off.
 async function getLosses(req, res) {
   const scope = branchScopeFor(req);
 
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT a.asset_code, a.description, a.purchase_price, a.nbv,
               ac.name AS category, lo.reported_date, lo.notes,
               s.name AS reported_by,
@@ -211,7 +211,7 @@ async function getLosses(req, res) {
   }
 }
 
-// GET /finance/recoverable — what leavers owe.
+// GET /finance/recoverable â€” what leavers owe.
 //
 // This is the figure HR Manual 8.10.2 requires on a clearance form, and the one
 // Finance deducts from final dues. It exists here so Finance can see it without
@@ -221,7 +221,7 @@ async function getRecoverable(req, res) {
 
   try {
     const [owed, unresolved] = await Promise.all([
-      pool.query(
+      db.query(
         `SELECT e.name AS employee, e.branch, e.last_working_day,
                 c.id AS clearance_id, c.status AS clearance_status, c.deadline,
                 COUNT(i.id)::int AS items,
@@ -238,7 +238,7 @@ async function getRecoverable(req, res) {
 
       // Still outstanding on an open clearance: not yet a debt, but it may
       // become one, and Finance should not be surprised by it.
-      pool.query(
+      db.query(
         `SELECT e.name AS employee, c.deadline,
                 COUNT(i.id)::int AS items,
                 COALESCE(SUM(i.value_at_exit), 0)::numeric AS amount
@@ -266,7 +266,7 @@ async function getRecoverable(req, res) {
   }
 }
 
-// GET /finance/export — the register as rows, for a spreadsheet.
+// GET /finance/export â€” the register as rows, for a spreadsheet.
 //
 // Returned as JSON and turned into CSV in the browser. Finance will want this
 // in Excel, and generating it client-side avoids holding a large file in memory
@@ -275,7 +275,7 @@ async function getExport(req, res) {
   const scope = branchScopeFor(req);
 
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT a.asset_code, a.description, ac.name AS category,
               a.serial_number, a.date_of_purchase, a.supplier,
               a.purchase_price, a.accumulated_depreciation, a.nbv,

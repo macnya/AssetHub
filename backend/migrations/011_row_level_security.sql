@@ -69,7 +69,10 @@ END $$;
 -- It holds no customer data: a code, a name, and display settings.
 GRANT SELECT ON organisation TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE organisation_id_seq TO app_user;
-
+-- Supabase enables RLS on every new table via an event trigger, so organisation
+-- has it too — and with no policy that denies everything, including the sign-in
+-- lookup which has to run before any organisation is known.
+CREATE POLICY organisation_readable ON organisation FOR SELECT USING (true);
 COMMIT;
 
 -- ---------------------------------------------------------------------------

@@ -1,15 +1,15 @@
 const Groq = require('groq-sdk');
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { branchScopeFor } = require('../utils/scope');
 const { ROLES, canonicalRole } = require('../middleware/authMiddleware');
 
-// POST /assistant — a natural-language front door to the register.
+// POST /assistant â€” a natural-language front door to the register.
 //
 // WHY THIS LIVES IN THE BACKEND
 // The Slack bot answered the same questions with its own copy of the queries,
 // its own scope handling and its own way of working out who was asking. Adding
 // a third copy for the admin panel and a fourth for the scanner is how a system
-// starts contradicting itself — which is exactly what happened to asset.status
+// starts contradicting itself â€” which is exactly what happened to asset.status
 // and the custody records.
 //
 // Here, verifyToken has already established who the caller is, what role they
@@ -21,7 +21,7 @@ const { ROLES, canonicalRole } = require('../middleware/authMiddleware');
 // prompt-injection attempt reaches a summariser, not a query planner.
 
 // Constructed lazily. The SDK throws if the key is missing, and doing that at
-// module load took the ENTIRE backend down — the register stopped serving 2,311
+// module load took the ENTIRE backend down â€” the register stopped serving 2,311
 // assets because an optional assistant had no credential. One endpoint
 // returning a clear error is the right failure mode; the API falling over is
 // not.
@@ -40,7 +40,7 @@ const MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 const SYSTEM_PROMPT = `You are the AssetHub asset register assistant.
 
 You are given DATA retrieved from the register and a QUESTION. Answer only from
-the DATA. Be brief — two or three sentences.
+the DATA. Be brief â€” two or three sentences.
 
 If the DATA says nothing was found, say so plainly and suggest what to try
 instead. Never invent an asset, a figure, a policy or a person's name. Never
@@ -62,7 +62,7 @@ let branchCacheExpiry = 0;
 
 async function knownBranches() {
   if (branchCache && Date.now() < branchCacheExpiry) return branchCache;
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT DISTINCT branch FROM location WHERE branch IS NOT NULL AND branch <> ''`
   );
   branchCache = rows.map((r) => r.branch);
@@ -85,7 +85,7 @@ async function assetByCode(text, scope) {
   if (!match) return null;
   const code = match[1].replace(/[\s\-]/g, '');
 
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT a.asset_code, a.description, a.status, a.condition, a.purchase_price,
             ac.name AS category, e.name AS holder,
             l.branch, l.department, l.physical_location
@@ -107,7 +107,7 @@ async function assetByCode(text, scope) {
 }
 
 async function branchSummary(branch, scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT COALESCE(ac.name, 'Uncategorised') AS category,
             COUNT(DISTINCT a.id)::int AS assets,
             COALESCE(SUM(a.purchase_price), 0)::numeric AS value
@@ -126,13 +126,13 @@ async function branchSummary(branch, scope) {
 }
 
 // Employees are matched against the table for the same reason branches are.
-// Two name parts minimum, and a tie refuses — there are several Graces, and
+// Two name parts minimum, and a tie refuses â€” there are several Graces, and
 // answering about the wrong person's equipment is worse than asking.
 async function findEmployee(text, scope) {
   const words = text.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter((w) => w.length > 2);
   if (words.length < 2) return null;
 
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT DISTINCT e.id, e.name, e.branch, e.department, e.employment_status
      FROM employee e
      LEFT JOIN assignment ag ON ag.employee_id = e.id AND ag.returned_date IS NULL
@@ -158,7 +158,7 @@ async function findEmployee(text, scope) {
 }
 
 async function employeeHoldings(employeeId, scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT a.asset_code, a.description, a.condition, a.purchase_price,
             ac.name AS category, l.branch
      FROM assignment ag
@@ -176,7 +176,7 @@ async function employeeHoldings(employeeId, scope) {
 }
 
 async function registerTotals(scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT a.status,
             COUNT(DISTINCT a.id)::int AS assets,
             COALESCE(SUM(a.purchase_price), 0)::numeric AS value
@@ -199,12 +199,12 @@ async function policyAnswer(question) {
   // Ranked by how many of the asker's words each entry actually matches.
   //
   // An earlier version used LIMIT 3 with no ORDER BY, which returns whichever
-  // rows Postgres finds first — insertion order. The leave entries were seeded
+  // rows Postgres finds first â€” insertion order. The leave entries were seeded
   // first, so "what do I do with company assets when I leave" got three
   // annual-leave answers and never saw the clearance entry that matched it
   // exactly. The model then correctly said it had nothing, which looked like a
   // gap in the knowledge base rather than a bug in the query.
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT question, answer,
             (SELECT COUNT(*) FROM unnest($1::text[]) AS t
              WHERE LOWER(question) LIKE '%' || t || '%')
@@ -231,7 +231,7 @@ async function policyAnswer(question) {
 // Assets in a given condition. "Show me the faulty equipment" is a question the
 // register can answer and previously could not.
 async function byCondition(condition, scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT a.asset_code, a.description, a.condition,
             ac.name AS category, l.branch, e.name AS holder
      FROM asset a
@@ -252,7 +252,7 @@ async function byCondition(condition, scope) {
 // How far through verification the organisation is. The register's own answer
 // to "has anybody actually looked at any of this?"
 async function verificationCoverage(scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT COALESCE(l.branch, 'No branch recorded') AS branch,
             COUNT(DISTINCT a.id)::int AS total,
             COUNT(DISTINCT a.id) FILTER (WHERE a.condition IS NOT NULL)::int AS verified
@@ -271,7 +271,7 @@ async function verificationCoverage(scope) {
 
 // Totals by category, so "which category is worth most" has an answer.
 async function byCategory(scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT COALESCE(ac.name, 'Uncategorised') AS category,
             COUNT(DISTINCT a.id)::int AS assets,
             COALESCE(SUM(a.purchase_price), 0)::numeric AS value
@@ -290,7 +290,7 @@ async function byCategory(scope) {
 
 // Every branch ranked, for "which branch has the most" questions.
 async function branchRanking(scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT l.branch,
             COUNT(DISTINCT a.id)::int AS assets,
             COALESCE(SUM(a.purchase_price), 0)::numeric AS value
@@ -310,7 +310,7 @@ async function branchRanking(scope) {
 // Assets held by people who have left, or are leaving. Directly the question
 // HR Manual 8.10.2 makes somebody answer.
 async function heldByLeavers(scope) {
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `SELECT e.name, e.employment_status, e.last_working_day,
             COUNT(a.id)::int AS assets,
             COALESCE(SUM(a.purchase_price), 0)::numeric AS value
@@ -384,7 +384,7 @@ async function ask(req, res) {
     // An earlier version tested phrase patterns before looking for a branch
     // name, so "what assets are at Head Office?" matched the people pattern,
     // went looking for an employee called Head Office, and failed. Anything
-    // that names a concrete thing — an asset code, a branch, a condition — now
+    // that names a concrete thing â€” an asset code, a branch, a condition â€” now
     // wins over a phrase, because a named thing is better evidence of intent
     // than a form of words.
 
@@ -401,13 +401,13 @@ async function ask(req, res) {
       } else {
         const a = found.asset;
         data =
-          `${a.asset_code} — ${a.description}\n` +
+          `${a.asset_code} â€” ${a.description}\n` +
           `Category: ${a.category || 'uncategorised'}\n` +
           `Status: ${a.status}\n` +
           `Condition: ${a.condition || 'not yet verified'}\n` +
           `Value: ${money(a.purchase_price)}\n` +
-          `Held by: ${a.holder || 'nobody — in storage'}\n` +
-          `Location: ${[a.branch, a.department, a.physical_location].filter(Boolean).join(' · ') || 'not recorded'}`;
+          `Held by: ${a.holder || 'nobody â€” in storage'}\n` +
+          `Location: ${[a.branch, a.department, a.physical_location].filter(Boolean).join(' Â· ') || 'not recorded'}`;
         sources = [a.asset_code];
       }
     }
@@ -428,7 +428,7 @@ async function ask(req, res) {
         ? `${rows.length}${rows.length === 25 ? '+' : ''} assets recorded as ${condition.value}` +
           `${scope ? ` at ${scope}` : ''}:\n` +
           rows.slice(0, 15).map((r) =>
-            `${r.asset_code} — ${r.description} (${r.branch || 'no branch'}${r.holder ? `, ${r.holder}` : ''})`
+            `${r.asset_code} â€” ${r.description} (${r.branch || 'no branch'}${r.holder ? `, ${r.holder}` : ''})`
           ).join('\n')
         : `No assets are recorded as ${condition.value}${scope ? ` at ${scope}` : ''}.`;
     }
@@ -452,7 +452,7 @@ async function ask(req, res) {
       data = rows.length
         ? `${rows.length} people who are leaving or have left still hold assets, worth ${money(total)}:\n` +
           rows.map((r) =>
-            `${r.name} (${r.employment_status}${r.last_working_day ? `, last day ${r.last_working_day}` : ''}) — ` +
+            `${r.name} (${r.employment_status}${r.last_working_day ? `, last day ${r.last_working_day}` : ''}) â€” ` +
             `${r.assets} asset${r.assets === 1 ? '' : 's'}, ${money(r.value)}`
           ).join('\n')
         : 'Nobody recorded as leaving or departed is currently holding assets.';
@@ -463,7 +463,7 @@ async function ask(req, res) {
       const rows = await byCategory(scope);
       const total = rows.reduce((s2, r) => s2 + Number(r.value || 0), 0);
       data =
-        `${scope ? `${scope}, by` : 'The whole register, by'} category — total ${money(total)}:\n` +
+        `${scope ? `${scope}, by` : 'The whole register, by'} category â€” total ${money(total)}:\n` +
         rows.map((r) => `${r.category}: ${r.assets} assets, ${money(r.value)}`).join('\n');
     }
 
@@ -496,7 +496,7 @@ async function ask(req, res) {
     else if (/what (?:assets?|equipment|devices?|items?)|who (?:has|holds)|assigned to|issued to|holding/i.test(lower)) {
       const match = await findEmployee(text, scope);
       if (!match) {
-        data = 'No staff member matched that name. A full name is needed — a first name alone is too ambiguous.';
+        data = 'No staff member matched that name. A full name is needed â€” a first name alone is too ambiguous.';
       } else if (match.ambiguous) {
         data = `Several people match: ${match.ambiguous.join(', ')}. Ask again with the full name.`;
       } else {
@@ -505,7 +505,7 @@ async function ask(req, res) {
         data = held.length
           ? `${match.employee.name} (${match.employee.branch || 'branch not recorded'}) holds ` +
             `${held.length} asset${held.length === 1 ? '' : 's'}, worth ${money(total)}:\n` +
-            held.map((h) => `${h.asset_code} — ${h.description} (${h.condition || 'not verified'})`).join('\n') +
+            held.map((h) => `${h.asset_code} â€” ${h.description} (${h.condition || 'not verified'})`).join('\n') +
             (match.employee.employment_status !== 'active'
               ? `\nNOTE: this person is recorded as ${match.employee.employment_status}.`
               : '')
@@ -539,7 +539,7 @@ async function ask(req, res) {
 
     // Who asked what, and under what scope. A log recording the question but
     // not the scope is of little use if anyone later asks what was disclosed.
-    await pool.query(
+    await db.query(
       `INSERT INTO bot_query_log
          (platform_user_id, username, staff_id, query, intent, response, scoped_to_branch, refused)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,

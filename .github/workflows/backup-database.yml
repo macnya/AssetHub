@@ -101,6 +101,16 @@ jobs:
             --no-owner --no-privileges \
             | gzip > "out/assethub-${STAMP}.sql.gz"
 
+          # Schema only, uncompressed. This is what a new database is built
+          # from - migrations 001-003, 005 and 006 were never committed, so
+          # the repository alone cannot recreate this structure. Small enough
+          # to open in an editor and paste into a SQL console.
+          pg_dump "$BACKUP_DATABASE_URL" \
+            --schema-only \
+            --schema=public \
+            --no-owner --no-privileges \
+            --file="out/schema-${STAMP}.sql"
+
           ls -lh out/
 
       - name: Sanity-check the dump

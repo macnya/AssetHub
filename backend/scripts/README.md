@@ -4,6 +4,11 @@ Two kinds of thing live here, and they should not be confused.
 
 ## Tools that belong to the product
 
+- **createFirstAdmin.js** - creates the first Admin on an empty database.
+  /auth/register needs an authenticated Admin to call it, which is correct once
+  there is one, but leaves a new deployment with a working API and no way to
+  log into it. Run once; it refuses if an Admin already exists.
+
 - **normalizeBranches.js** — collapses branch spellings to a canonical list.
 - **normalizePlaces.js** — merges location rows that are one office written
   several ways, from a hand-written list of merges.

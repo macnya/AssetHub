@@ -1,5 +1,9 @@
 
--- Baseline: the schema as it stood when AssetHub was forked from the
+-- NOTE: row-level security was disabled on all tables after this schema was
+-- loaded. Supabase enables RLS automatically on new tables, and with no
+-- policies defined that denies everything to app_user. It must be turned back
+-- on with org_id policies as part of the multi-tenancy work — see
+-- docs/going-multi-tenant.md, Step 3.-- Baseline: the schema as it stood when AssetHub was forked from the
 -- VisionFund register.
 --
 -- Migrations 001-003, 005 and 006 were never committed, so this file is what a

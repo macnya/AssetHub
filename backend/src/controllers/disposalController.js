@@ -1,6 +1,6 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 
-// POST /disposals — record a disposal and update the asset's status
+// POST /disposals â€” record a disposal and update the asset's status
 async function createDisposal(req, res) {
   const {
     asset_id, sales_proceeds, disposal_month, notes
@@ -11,7 +11,7 @@ async function createDisposal(req, res) {
     return res.status(400).json({ error: 'asset_id is required' });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
 
@@ -64,7 +64,7 @@ async function createDisposal(req, res) {
 
 async function getAllDisposals(req, res) {
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT dr.*, a.asset_code, a.description, s.name AS disposed_by_name
       FROM disposal_record dr
       JOIN asset a ON dr.asset_id = a.id

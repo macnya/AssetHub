@@ -1,5 +1,5 @@
 const xlsx = require('xlsx');
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { ASSET_CONDITIONS, isValidCondition } = require('../constants/assetConditions');
 
 // Bulk import from a spreadsheet, with a preview before anything is written.
@@ -8,8 +8,8 @@ const { ASSET_CONDITIONS, isValidCondition } = require('../constants/assetCondit
 // A bad import is the one action that can damage 2,311 records at once, and
 // every data problem in this register came from an import that reported success
 // while doing something unexpected. So this parses the file, compares it with
-// what is already there, and reports exactly what it would do — added, changed,
-// unchanged, rejected — before a single row is written.
+// what is already there, and reports exactly what it would do â€” added, changed,
+// unchanged, rejected â€” before a single row is written.
 //
 // The file is never stored. It is parsed in memory, the diff is returned, and
 // the browser sends the rows back when the person confirms. That avoids holding
@@ -17,7 +17,7 @@ const { ASSET_CONDITIONS, isValidCondition } = require('../constants/assetCondit
 // restarts between the two steps.
 
 // Column headings are trimmed before use. This workbook pads the headings of
-// its numeric columns — ' PURCHASE PRICE ', ' NBV ' — while text columns are
+// its numeric columns â€” ' PURCHASE PRICE ', ' NBV ' â€” while text columns are
 // clean, and that single space emptied every financial field in the register
 // and understated it by a factor of sixty-six.
 function normaliseHeaders(row) {
@@ -66,7 +66,7 @@ function toNumber(value) {
   if (value === undefined || value === null || value === '') return null;
   // "1,234.50" and "KES 1,234" both give NaN through Number() alone, and the
   // value is then silently lost.
-  // A cell holding only spaces strips to '', and Number('') is 0 — so a blank
+  // A cell holding only spaces strips to '', and Number('') is 0 â€” so a blank
   // read as a recorded zero. One such cell is already in the Accumulated
   // Depreciation column of the Equipments sheet.
   if (typeof value === 'string' && !/\d/.test(value)) return null;
@@ -81,8 +81,8 @@ function toNumber(value) {
 }
 
 // A useful life is a small number of years. The Non-Capitalized sheet has 15
-// rows where No. OF YEARS holds values like 358928132569567 — device
-// identifiers pasted into the wrong column — and one of them overflowed the
+// rows where No. OF YEARS holds values like 358928132569567 â€” device
+// identifiers pasted into the wrong column â€” and one of them overflowed the
 // column and stopped the entire import. An implausible value is dropped and
 // flagged, rather than 2,116 good rows failing because of 15 bad cells.
 function toYears(value) {
@@ -96,12 +96,12 @@ function toYears(value) {
 // The original import called .toISOString() on a date parsed in local time.
 // Kenya is UTC+3, so midnight on the 1st became 21:00 on the 30th, and every
 // purchase date in the register is one day early. A spreadsheet date has no
-// timezone — it is the day written in the cell — so the local parts are read
+// timezone â€” it is the day written in the cell â€” so the local parts are read
 // directly rather than converted.
 function toDate(value) {
   if (!value) return null;
   // A bare number is not a date. cellDates hands back a real Date for anything
-  // Excel formats as one, so a number means the cell holds something else —
+  // Excel formats as one, so a number means the cell holds something else â€”
   // and new Date(717664454) would quietly read as 9 January 1970.
   if (typeof value === 'number') return null;
 
@@ -116,7 +116,7 @@ function toDate(value) {
 
 // Sheets that are not asset registers. This workbook carries cleanup notes, a
 // summary, disposal and loss listings, and copies of three sheets somebody
-// duplicated in Excel and left in — reading them all produced 1,095 rejections
+// duplicated in Excel and left in â€” reading them all produced 1,095 rejections
 // and buried the rows that mattered.
 const SKIP_SHEET = /^(data cleanup|nc codes|summary|disposal|lost assets|sheet\d*)/i;
 const DUPLICATE_SHEET = /\(\d+\)\s*$/;
@@ -158,7 +158,7 @@ function parseWorkbook(buffer) {
       if (/^(n\/?a|none|nil|-{1,}|tbd)$/i.test(assetCode)
           || /^(balance|system balance|variance|total|grand total|sub[- ]?total)/i.test(assetCode)) {
         rejections.push({ sheet: sheetName, row: rowNumber, code: assetCode,
-                          reason: 'Not an asset — a total or balance row' });
+                          reason: 'Not an asset â€” a total or balance row' });
         return;
       }
 
@@ -172,7 +172,7 @@ function parseWorkbook(buffer) {
       // A code appearing twice in one upload is a mistake in the spreadsheet,
       // not something to resolve silently by taking the last one.
       // The message names the sheet the first copy was on. Codes repeat ACROSS
-      // sheets here — 54 of the Tablets rows also appear under Non-Capitalized —
+      // sheets here â€” 54 of the Tablets rows also appear under Non-Capitalized â€”
       // and "duplicate of row 442 in this file" read as nonsense while you were
       // looking at a different tab.
       if (seenCodes.has(assetCode)) {
@@ -213,7 +213,7 @@ function parseWorkbook(buffer) {
         condition_raw: condition ? String(condition).trim() : null,
       };
 
-            // A serial appearing twice is worth flagging but not refusing — two
+            // A serial appearing twice is worth flagging but not refusing â€” two
       // identical monitors legitimately share a blank serial.
       if (parsed.serial_number && !/^n\/?a$/i.test(parsed.serial_number)) {
         if (seenSerials.has(parsed.serial_number)) {
@@ -224,13 +224,13 @@ function parseWorkbook(buffer) {
       }
 
       // A cell was present but too implausible to keep. 15 rows on the
-      // Non-Capitalized sheet carry device identifiers in these two columns —
-      // 358928132569567 years of useful life — and one of them overflowed the
+      // Non-Capitalized sheet carry device identifiers in these two columns â€”
+      // 358928132569567 years of useful life â€” and one of them overflowed the
       // column and stopped the whole import before this was caught here.
       if (pick(row, 'usefulLife') != null && parsed.useful_life_years === null) {
-        parsed.warning = 'Useful life is not a plausible number of years — ignored';
+        parsed.warning = 'Useful life is not a plausible number of years â€” ignored';
       } else if (pick(row, 'endMonth') != null && parsed.current_end_month_date === null) {
-        parsed.warning = 'End month date is not a date — ignored';
+        parsed.warning = 'End month date is not a date â€” ignored';
       }
 
       rows.push(parsed);
@@ -250,7 +250,7 @@ const COMPARED = [
 ];
 
 // Dates arrive as a JS Date from Postgres and as a string from the sheet, so a
-// plain string comparison never matched — which reported 2,201 of 2,291 assets
+// plain string comparison never matched â€” which reported 2,201 of 2,291 assets
 // as "changed" when only the format differed, burying whatever had genuinely
 // moved.
 const asDate = (v) => {
@@ -276,7 +276,7 @@ const same = (a, b) => {
   return String(a).trim() === String(b).trim();
 };
 
-// POST /import/preview — parse and compare. Writes nothing.
+// POST /import/preview â€” parse and compare. Writes nothing.
 async function preview(req, res) {
   if (!req.file) return res.status(400).json({ error: 'No file was uploaded' });
 
@@ -292,7 +292,7 @@ async function preview(req, res) {
     }
 
     const codes = rows.map((r) => r.asset_code);
-    const { rows: existing } = await pool.query(
+    const { rows: existing } = await db.query(
       `SELECT asset_code, description, serial_number, date_of_purchase,
               purchase_price, supplier, nbv, accumulated_depreciation,
               chassis_number, engine_number,
@@ -316,7 +316,7 @@ async function preview(req, res) {
       }
 
       // Only fields the sheet actually supplies are compared. A blank cell means
-      // "no information", not "set this to empty" — otherwise a partial upload
+      // "no information", not "set this to empty" â€” otherwise a partial upload
       // would wipe data it never mentioned.
       const changes = COMPARED
         .filter((f) => r[f] != null && !same(r[f], current[f]))
@@ -355,7 +355,7 @@ async function preview(req, res) {
 // branch / department / programme / physical_location, all four.
 //
 // This omitted programme, and location rows differ by it: Mombasa alone has
-// five rows — plain, Mwatate, Changamwe, Kilifi and Marafa — that all produced
+// five rows â€” plain, Mwatate, Changamwe, Kilifi and Marafa â€” that all produced
 // the identical key. byKey is a Map, so the last one read from the database
 // won, and an import row for plain Mombasa would have been filed under
 // whichever programme happened to come back last.
@@ -381,7 +381,7 @@ async function resolveLocations(client, rows) {
 
   for (const r of rows) {
     // location.branch is NOT NULL. The Intangibles sheet has no BRANCH column
-    // at all — it carries the branch under LOCATION, alongside a PHYSICAL
+    // at all â€” it carries the branch under LOCATION, alongside a PHYSICAL
     // LOCATION column that actually holds condition text ("In use", "Working").
     // Guessing which of those is the branch is how this register acquired 86
     // spellings for 35 places, so a row with no branch is left unplaced and
@@ -432,13 +432,13 @@ async function resolveLocations(client, rows) {
 
   return { ids, created: missing.length, skipped };
 }
-// POST /import/apply — write the rows the person has just seen.
+// POST /import/apply â€” write the rows the person has just seen.
 async function apply(req, res) {
   const {
     rows, mode = 'upsert', filename = 'upload.xlsx', sheets = [],
     // Set false to write asset records only and leave placement alone. The
-    // sheet's branch spellings are not canonical — "Head Office", "HEAD
-    // OFFICE" and "HO" are all in there — so creating locations from it grows
+    // sheet's branch spellings are not canonical â€” "Head Office", "HEAD
+    // OFFICE" and "HO" are all in there â€” so creating locations from it grows
     // the branch list until scripts/normalizeBranches.js is run afterwards.
     link_locations = true,
   } = req.body;
@@ -447,14 +447,14 @@ async function apply(req, res) {
     return res.status(400).json({ error: 'No rows to import' });
   }
 
-  const client = await pool.connect();
+  const client = await db.connect();
 
   try {
     await client.query('BEGIN');
 
       const batch = await client.query(
       // sheet_names and rows_read, per migration 009. This read "sheets" and
-      // "row_count" — names that have never existed — and was never reached
+      // "row_count" â€” names that have never existed â€” and was never reached
       // to find out, because the body limit rejected every import first.
       `INSERT INTO import_batch (filename, sheet_names, imported_by, mode, rows_read)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
@@ -479,7 +479,7 @@ async function apply(req, res) {
     // The register records a holder under the PHYSICAL LOCATION heading, so
     // that column contains staff names as often as places. The first import to
     // write placements read "Grace Kimeu" as somewhere an asset could be, made
-    // a location row for her, and opened an assignment against it — on eight
+    // a location row for her, and opened an assignment against it â€” on eight
     // assets written off in December 2024 and two recorded as lost. That put
     // live custody of equipment that no longer exists onto named people, who
     // exit clearance would then have chased for it.
@@ -556,7 +556,7 @@ async function apply(req, res) {
           continue;
         }
 
-        // An asset already in the register may still have no location — every
+        // An asset already in the register may still have no location â€” every
         // row imported before this change is in exactly that state.
         place(existingId, r);
 
@@ -658,7 +658,7 @@ async function apply(req, res) {
     console.error('Import failed at', err.importRow || 'the location pass', err);
     res.status(500).json({
       error: 'The import failed and nothing was written.',
-      // Admin-only endpoint, so returning the cause is safe — and saves
+      // Admin-only endpoint, so returning the cause is safe â€” and saves
       // reading the server log every time a sheet has a surprise in it.
       detail: err.message,
       at: err.importRow || null,
@@ -667,10 +667,10 @@ async function apply(req, res) {
     client.release();
   }
 }
-// GET /import/batches — what has been imported, and by whom.
+// GET /import/batches â€” what has been imported, and by whom.
 async function getBatches(req, res) {
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT b.*, s.name AS imported_by_name
        FROM import_batch b
        LEFT JOIN it_staff s ON s.id = b.imported_by

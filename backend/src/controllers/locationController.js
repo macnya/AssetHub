@@ -1,9 +1,9 @@
-const pool = require('../db/pool');
+const { db } = require('../db/context');
 const { branchScopeFor } = require('../utils/scope');
 
 async function getAllLocations(req, res) {
   try {
-    const result = await pool.query('SELECT * FROM location ORDER BY branch, physical_location');
+    const result = await db.query('SELECT * FROM location ORDER BY branch, physical_location');
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -16,7 +16,7 @@ async function createLocation(req, res) {
   if (!branch) return res.status(400).json({ error: 'branch is required' });
 
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `INSERT INTO location (branch, department, physical_location) VALUES ($1,$2,$3) RETURNING *`,
       [branch, department || null, physical_location || null]
     );
@@ -27,7 +27,7 @@ async function createLocation(req, res) {
   }
 }
 
-// GET /locations/branches — the structure, with live asset counts.
+// GET /locations/branches â€” the structure, with live asset counts.
 //
 // Returns one entry per branch, each carrying its region and the departments,
 // programmes and places beneath it. The admin panel uses this for a view of
@@ -36,12 +36,12 @@ async function createLocation(req, res) {
 //
 // Counts are of assets with a LIVE assignment. An asset in storage has no
 // assignment and therefore no branch, so branch totals will not sum to the
-// register total — that gap is itself worth seeing.
+// register total â€” that gap is itself worth seeing.
 async function getBranchTree(req, res) {
   const scopeBranch = branchScopeFor(req);
 
   try {
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `SELECT
           l.region,
           l.branch,
